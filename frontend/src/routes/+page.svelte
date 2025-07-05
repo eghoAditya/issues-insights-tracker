@@ -1,7 +1,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { jwtDecode } from 'jwt-decode';
-
+	import jwt_decode from 'jwt-decode';
 
 	declare global {
 		interface Window {
@@ -13,7 +12,7 @@
 						prompt: () => void;
 					};
 				};
-			};
+			}
 		}
 	}
 	export {};
@@ -28,8 +27,7 @@
 		created_at: string;
 	};
 
-	export let data: { issues: Issue[] };
-
+	let issues: Issue[] = [];
 	let title = '';
 	let description = '';
 	let severity = 'LOW';
@@ -48,19 +46,17 @@
 	};
 
 	const extractUserEmail = () => {
-	const token = localStorage.getItem('token');
-	if (!token) return;
-	try {
-		const decoded: any = jwtDecode(token);
-		console.log('Decoded JWT:', decoded); // 👈 ADD THIS LINE
-		userEmail = decoded.email || decoded.preferred_username || decoded.name || decoded.sub || 'User';
-	} catch (err) {
-		console.error('JWT decode failed:', err);
-		userEmail = 'User';
-	}
-};
-
-
+		const token = localStorage.getItem('token');
+		if (!token) return;
+		try {
+			const decoded: any = jwt_decode(token);
+			console.log('Decoded JWT:', decoded);
+			userEmail = decoded.email ?? 'User';
+		} catch (err) {
+			console.error('JWT decode failed:', err);
+			userEmail = 'User';
+		}
+	};
 
 	const handleLogin = async () => {
 		const res = await fetch('http://localhost:8000/login', {
@@ -85,9 +81,11 @@
 	onMount(() => {
 		const token = localStorage.getItem('token');
 		isLoggedIn = !!token;
-		if (isLoggedIn) extractUserEmail();
 
-		if (!isLoggedIn) {
+		if (isLoggedIn) {
+			extractUserEmail();
+			fetchUserIssues();
+		} else {
 			const script = document.createElement('script');
 			script.src = 'https://accounts.google.com/gsi/client';
 			script.async = true;
@@ -123,6 +121,23 @@
 			document.head.appendChild(script);
 		}
 	});
+
+	const fetchUserIssues = async () => {
+		const token = localStorage.getItem('token');
+		if (!token) return;
+
+		const res = await fetch('http://localhost:8000/issues/my', {
+			headers: {
+				Authorization: `Bearer ${token}`
+			}
+		});
+
+		if (res.ok) {
+			issues = await res.json();
+		} else {
+			console.error('❌ Failed to fetch user issues');
+		}
+	};
 
 	const handleSubmit = async (e: SubmitEvent) => {
 		e.preventDefault();
@@ -161,7 +176,7 @@
 		description = '';
 		severity = 'LOW';
 		file = null;
-		location.reload();
+		await fetchUserIssues();
 	};
 </script>
 
@@ -242,11 +257,11 @@
 	</form>
 
 	<!-- Issues List -->
-	<h1 class="text-2xl font-bold mb-4">Issues</h1>
+	<h1 class="text-2xl font-bold mb-4">My Issues</h1>
 
-	{#if data.issues.length > 0}
+	{#if issues.length > 0}
 		<ul class="space-y-2">
-			{#each data.issues as issue}
+			{#each issues as issue}
 				<li class="p-4 rounded bg-gray-100 border border-gray-300">
 					<h2 class="text-lg font-semibold">{issue.title}</h2>
 					<p class="text-sm text-gray-700">{issue.description}</p>

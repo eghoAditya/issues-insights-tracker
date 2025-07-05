@@ -27,6 +27,7 @@ GOOGLE_REDIRECT_URI = os.getenv("GOOGLE_REDIRECT_URI")
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/token")
 
+
 # --- Auth Helpers ---
 def hash_password(password: str) -> str:
     return pwd_context.hash(password)
@@ -46,6 +47,7 @@ def decode_token(token: str) -> dict:
     except JWTError:
         raise HTTPException(status_code=401, detail="Invalid token")
 
+
 # --- User Retrieval ---
 def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)) -> models.User:
     payload = decode_token(token)
@@ -58,6 +60,7 @@ def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(
         raise HTTPException(status_code=401, detail="User not found")
 
     return user
+
 
 # --- Role Checks ---
 def require_admin(user: models.User = Depends(get_current_user)):
@@ -75,6 +78,7 @@ def require_reporter(user: models.User = Depends(get_current_user)):
         raise HTTPException(status_code=403, detail="Reporter access required")
     return user
 
+
 # --- Google OAuth Flow ---
 @router.get("/auth/google")
 def google_login():
@@ -87,6 +91,7 @@ def google_login():
         "prompt": "consent"
     })
     return RedirectResponse(f"https://accounts.google.com/o/oauth2/v2/auth?{params}")
+
 
 @router.get("/auth/google/callback")
 async def google_callback(request: Request, db: Session = Depends(get_db)):
@@ -129,6 +134,20 @@ async def google_callback(request: Request, db: Session = Depends(get_db)):
             db.commit()
             db.refresh(user)
 
-        # ✅ Token now includes email
+        # ✅ INCLUDE EMAIL IN JWT
         token = create_access_token({"sub": str(user.id), "email": user.email})
         return {"access_token": token, "token_type": "bearer"}
+
+
+# --- Email/Password Login Route ---
+from fastapi.security import OAuth2PasswordRequestForm
+
+@router.post("/login")
+def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
+    user = db.query(models.User).filter(models.User.email == form_data.username).first()
+    if not user or not verify_password(form_data.password, user.hashed_password):
+        raise HTTPException(status_code=401, detail="Invalid credentials")
+
+    # ✅ INCLUDE EMAIL IN JWT
+    access_token = create_access_token(data={"sub": str(user.id), "email": user.email})
+    return {"access_token": access_token, "token_type": "bearer"}
