@@ -1,7 +1,8 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
+	import { jwtDecode } from 'jwt-decode';
 
-	// ✅ TypeScript support for Google
+
 	declare global {
 		interface Window {
 			google?: {
@@ -39,8 +40,28 @@
 	let isLoggedIn = false;
 	let email = '';
 	let password = '';
+	let userEmail = '';
 
-	// --- Email/Password Login ---
+	const logout = () => {
+		localStorage.removeItem('token');
+		location.reload();
+	};
+
+	const extractUserEmail = () => {
+	const token = localStorage.getItem('token');
+	if (!token) return;
+	try {
+		const decoded: any = jwtDecode(token);
+		console.log('Decoded JWT:', decoded); // 👈 ADD THIS LINE
+		userEmail = decoded.email || decoded.preferred_username || decoded.name || decoded.sub || 'User';
+	} catch (err) {
+		console.error('JWT decode failed:', err);
+		userEmail = 'User';
+	}
+};
+
+
+
 	const handleLogin = async () => {
 		const res = await fetch('http://localhost:8000/login', {
 			method: 'POST',
@@ -56,14 +77,15 @@
 		const data = await res.json();
 		localStorage.setItem('token', data.access_token);
 		isLoggedIn = true;
+		extractUserEmail();
 		error = '';
 		location.reload();
 	};
 
-	// --- Google OAuth ---
 	onMount(() => {
 		const token = localStorage.getItem('token');
 		isLoggedIn = !!token;
+		if (isLoggedIn) extractUserEmail();
 
 		if (!isLoggedIn) {
 			const script = document.createElement('script');
@@ -88,6 +110,7 @@
 						const data = await res.json();
 						localStorage.setItem('token', data.access_token);
 						isLoggedIn = true;
+						extractUserEmail();
 						location.reload();
 					}
 				});
@@ -101,7 +124,6 @@
 		}
 	});
 
-	// --- Submit New Issue ---
 	const handleSubmit = async (e: SubmitEvent) => {
 		e.preventDefault();
 		error = '';
@@ -168,6 +190,12 @@
 		{/if}
 	</form>
 {:else}
+	<!-- User Info + Logout -->
+	<div class="mb-4 flex justify-between items-center bg-gray-100 p-4 rounded border">
+		<p class="text-gray-700">Logged in as <strong>{userEmail}</strong></p>
+		<button on:click={logout} class="bg-red-600 text-white px-4 py-1 rounded">Logout</button>
+	</div>
+
 	<!-- Create Issue Form -->
 	<form on:submit={handleSubmit} class="space-y-4 mb-6 p-4 border rounded bg-white shadow">
 		<h2 class="text-xl font-semibold">Create New Issue</h2>
