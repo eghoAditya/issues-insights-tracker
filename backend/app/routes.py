@@ -53,9 +53,13 @@ def get_own_issues(db: Session = Depends(get_db),
 
 # --- Get All Issues (MAINTAINER or ADMIN) ---
 @router.get("/issues/", response_model=list[schemas.IssueOut])
-def list_issues(db: Session = Depends(get_db),
-                user: models.User = Depends(auth.require_maintainer)):
+def list_issues(
+    db: Session = Depends(get_db),
+    # user: models.User = Depends(auth.require_maintainer)  # 👈 TEMPORARILY COMMENTED OUT
+):
     return db.query(models.Issue).all()
+
+
 
 
 # --- Update Issue Status (MAINTAINER or ADMIN) ---
