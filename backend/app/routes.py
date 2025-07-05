@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
 from sqlalchemy.orm import Session
+from fastapi.security import OAuth2PasswordRequestForm
 from app import models, schemas, auth
 from app.database import get_db
 import shutil
@@ -7,6 +8,31 @@ import uuid
 import os
 
 router = APIRouter()
+
+# ✅ OAuth2-compatible token login route
+@router.post("/api/token")
+def login_for_access_token(
+    form_data: OAuth2PasswordRequestForm = Depends(),
+    db: Session = Depends(get_db)
+):
+    user = db.query(models.User).filter(models.User.email == form_data.username).first()
+    if not user or not auth.verify_password(form_data.password, user.hashed_password):
+        raise HTTPException(status_code=401, detail="Invalid credentials")
+
+    access_token = auth.create_access_token(data={"sub": str(user.id)})
+    return {"access_token": access_token, "token_type": "bearer"}
+
+
+# You can keep or remove this /login route if not used
+@router.post("/login")
+def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
+    user = db.query(models.User).filter(models.User.email == form_data.username).first()
+    if not user or not auth.verify_password(form_data.password, user.hashed_password):
+        raise HTTPException(status_code=401, detail="Invalid credentials")
+
+    token = auth.create_access_token({"sub": str(user.id)})
+    return {"access_token": token, "token_type": "bearer"}
+
 
 # Set up uploads directory
 UPLOAD_DIR = "uploads"
@@ -58,8 +84,6 @@ def list_issues(
     # user: models.User = Depends(auth.require_maintainer)  # 👈 TEMPORARILY COMMENTED OUT
 ):
     return db.query(models.Issue).all()
-
-
 
 
 # --- Update Issue Status (MAINTAINER or ADMIN) ---

@@ -1,7 +1,7 @@
 from datetime import datetime, timedelta
 from typing import Optional
 
-from fastapi import HTTPException, Depends
+from fastapi import HTTPException, Depends, APIRouter
 from jose import jwt, JWTError
 from passlib.context import CryptContext
 from sqlalchemy.orm import Session
@@ -17,7 +17,8 @@ ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24  # 1 day
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/token")
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/login")
+
 
 def hash_password(password: str) -> str:
     return pwd_context.hash(password)
@@ -66,3 +67,17 @@ def require_reporter(user: models.User = Depends(get_current_user)):
     if user.role not in ("ADMIN", "REPORTER"):
         raise HTTPException(status_code=403, detail="Reporter access required")
     return user
+
+# --- Auth Route for Login ---
+
+router = APIRouter()
+
+@router.post("/api/token")
+def login(request: schemas.TokenRequest, db: Session = Depends(get_db)):
+    user = db.query(models.User).filter(models.User.email == request.username).first()
+
+    if not user or not verify_password(request.password, user.hashed_password):
+        raise HTTPException(status_code=401, detail="Invalid credentials")
+
+    token = create_access_token({"sub": str(user.id)})
+    return {"access_token": token, "token_type": "bearer"}
