@@ -5,4 +5,9 @@ psycopg2-binary
 passlib[bcrypt]
 python-jose[cryptography]
 python-multipart
+authlib
+python-dotenv
+requests
+httpx
+
 

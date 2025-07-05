@@ -16,4 +16,4 @@ app.add_middleware(
 
 # ✅ API routes
 app.include_router(router)
-app.include_router(auth.router)  # ✅ Login route: /api/token
+# app.include_router(auth.router)  # ✅ Login route: /api/token

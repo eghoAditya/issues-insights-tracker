@@ -1,29 +1,20 @@
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, Request
 from sqlalchemy.orm import Session
 from fastapi.security import OAuth2PasswordRequestForm
-from app import models, schemas, auth
-from app.database import get_db
 import shutil
 import uuid
 import os
+import requests
+
+from app import models, schemas, auth
+from app.database import get_db
 
 router = APIRouter()
 
-# ✅ OAuth2-compatible token login route
-@router.post("/api/token")
-def login_for_access_token(
-    form_data: OAuth2PasswordRequestForm = Depends(),
-    db: Session = Depends(get_db)
-):
-    user = db.query(models.User).filter(models.User.email == form_data.username).first()
-    if not user or not auth.verify_password(form_data.password, user.hashed_password):
-        raise HTTPException(status_code=401, detail="Invalid credentials")
+# --- Include auth router ---
+router.include_router(auth.router)  # ✅ this includes Google OAuth endpoints
 
-    access_token = auth.create_access_token(data={"sub": str(user.id)})
-    return {"access_token": access_token, "token_type": "bearer"}
-
-
-# You can keep or remove this /login route if not used
+# --- Traditional Login ---
 @router.post("/login")
 def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
     user = db.query(models.User).filter(models.User.email == form_data.username).first()
@@ -34,7 +25,35 @@ def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depend
     return {"access_token": token, "token_type": "bearer"}
 
 
-# Set up uploads directory
+# --- Google OAuth Login (receives Google ID token from frontend) ---
+@router.post("/login/google")
+async def login_with_google(request: Request, db: Session = Depends(get_db)):
+    data = await request.json()
+    token = data.get("token")
+    if not token:
+        raise HTTPException(status_code=400, detail="Google ID token missing")
+
+    resp = requests.get(f"https://oauth2.googleapis.com/tokeninfo?id_token={token}")
+    if resp.status_code != 200:
+        raise HTTPException(status_code=401, detail="Invalid Google token")
+
+    info = resp.json()
+    email = info.get("email")
+    if not email:
+        raise HTTPException(status_code=400, detail="Email not found in Google token")
+
+    user = db.query(models.User).filter(models.User.email == email).first()
+    if not user:
+        user = models.User(email=email, hashed_password="", role="REPORTER")
+        db.add(user)
+        db.commit()
+        db.refresh(user)
+
+    access_token = auth.create_access_token(data={"sub": str(user.id)})
+    return {"access_token": access_token, "token_type": "bearer"}
+
+
+# --- Uploads Directory ---
 UPLOAD_DIR = "uploads"
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
@@ -73,16 +92,12 @@ def create_issue(
 @router.get("/issues/my", response_model=list[schemas.IssueOut])
 def get_own_issues(db: Session = Depends(get_db),
                    user: models.User = Depends(auth.require_reporter)):
-
     return db.query(models.Issue).filter(models.Issue.reporter_id == user.id).all()
 
 
-# --- Get All Issues (MAINTAINER or ADMIN) ---
+# --- Get All Issues (TEMP: public for now) ---
 @router.get("/issues/", response_model=list[schemas.IssueOut])
-def list_issues(
-    db: Session = Depends(get_db),
-    # user: models.User = Depends(auth.require_maintainer)  # 👈 TEMPORARILY COMMENTED OUT
-):
+def list_issues(db: Session = Depends(get_db)):
     return db.query(models.Issue).all()
 
 
